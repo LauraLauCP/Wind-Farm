@@ -93,14 +93,18 @@ GET /api/antartida/datos/fechaini/{fechaIniStr}/fechafin/{fechaFinStr}/estacion/
 Raw 10-minute series, datetimes understood as UTC:
 
 ```bash
-curl "http://localhost:3000/api/antartida/datos/fechaini/2026-10-01T00:00:00/fechafin/2026-10-02T00:00:00/estacion/juan-carlos-i"
+curl "http://localhost:3000/api/antartida/datos/fechaini/2026-01-01T00:00:00/fechafin/2026-01-02T00:00:00/estacion/juan-carlos-i"
 ```
 
 Daily aggregation of wind speed and temperature, datetimes in Madrid local time:
 
 ```bash
-curl "http://localhost:3000/api/antartida/datos/fechaini/2026-10-01T00:00:00/fechafin/2026-11-01T00:00:00/estacion/gabriel-de-castilla?location=Europe/Madrid&aggregation=daily&types=temperature,speed"
+curl "http://localhost:3000/api/antartida/datos/fechaini/2026-01-01T00:00:00/fechafin/2026-02-01T00:00:00/estacion/gabriel-de-castilla?location=Europe/Madrid&aggregation=daily&types=temperature,speed"
 ```
+
+> **Note:** the stations operate during the Antarctic summer campaigns, so
+> data is typically available roughly from November to March. Requesting a
+> period with no measurements returns a `404 no_data` error.
 
 Same request with an explicit offset instead of a zone name:
 
@@ -167,6 +171,11 @@ Every error is a JSON envelope: `{"error": {"code": "...", "message": "..."}}`.
 - **AEMET two-step fetch:** every AEMET OpenData endpoint returns an envelope
   whose `datos` field is a URL to the actual data resource; the client follows
   it transparently.
+- **Verified AEMET quirks** (all pinned by tests in `tests/aemetClient.test.ts`):
+  the path dates require the literal `UTC` suffix (`...T00:00:00UTC`);
+  "no data" arrives as HTTP 200 with `estado: 404` inside the envelope (mapped
+  to our `404 no_data`); missing measurements are the string `"NaN"` (mapped
+  to `null`); timestamps are ISO with `Z` suffix.
 - **Station catalog:** the challenge's friendly station names map to the AEMET
   identifiers `89064` (Juan Carlos I) and `89070` (Gabriel de Castilla), taken
   from the official OpenData catalog. The catalog also carries the station's
@@ -200,11 +209,5 @@ tests/
 
 ## Known limitations / TODOs
 
-- [ ] The exact format of the real AEMET `datos` payload for these stations
-      (`fhora` shape, decimal comma, field casing) is handled defensively but
-      has not yet been verified against a live response — the API key used
-      during development was rejected by AEMET. Re-check once a working key is
-      available; `src/services/antartidaService.ts` (`parseFhora`, `parseNumber`)
-      is the single place to adjust.
 - [ ] No caching or storage of AEMET responses (that is Part 2).
 - [ ] No request rate limiting of our own API (out of Part 1 scope).

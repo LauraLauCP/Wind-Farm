@@ -27,8 +27,12 @@ interface AemetEnvelope {
   datos?: string;
 }
 
+/**
+ * Formats a UTC instant the way the AEMET antartida endpoint expects:
+ * `AAAA-MM-DDTHH:MM:SSUTC` (the "UTC" suffix is part of AEMET's format).
+ */
 function formatAemetInstant(instant: DateTime): string {
-  return instant.toUTC().toFormat("yyyy-MM-dd'T'HH:mm:ss");
+  return instant.toUTC().toFormat("yyyy-MM-dd'T'HH:mm:ss'UTC'");
 }
 
 /** Translates AEMET HTTP failures into typed application errors. */
@@ -80,6 +84,10 @@ export class AemetClient implements AemetReadingsFetcher {
     const envelope = await this.getJson<AemetEnvelope>(url);
 
     if (envelope.estado !== 200 || typeof envelope.datos !== 'string') {
+      // AEMET reports "no data" as HTTP 200 + estado 404 in the envelope.
+      if (envelope.estado === 404) {
+        throw new HttpError(404, 'no_data', 'AEMET has no data for the requested station and time range.');
+      }
       throw new HttpError(
         502,
         'aemet_upstream_error',

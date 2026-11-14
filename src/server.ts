@@ -5,7 +5,7 @@ const app = createApp();
 const server = app.listen(env.PORT, () => {
   console.log(`Wind Farm API listening on http://localhost:${env.PORT}`);
   console.log(
-    `Try: http://localhost:${env.PORT}/api/antartida/datos/fechaini/2026-10-01T00:00:00/fechafin/2026-10-02T00:00:00/estacion/juan-carlos-i`,
+    `Try: http://localhost:${env.PORT}/api/antartida/datos/fechaini/2026-01-01T00:00:00/fechafin/2026-01-02T00:00:00/estacion/juan-carlos-i`,
   );
 });
 
