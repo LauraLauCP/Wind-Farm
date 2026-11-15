@@ -18,3 +18,6 @@ npm-debug.log*
 # OS junk
 Thumbs.db
 .DS_Store
+
+# SQLite cache data (Part 2)
+data/
