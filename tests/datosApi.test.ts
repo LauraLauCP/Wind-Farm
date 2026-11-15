@@ -39,7 +39,7 @@ async function buildStack() {
   // Seed the catalog from the sample inventory fixture (8178D present) + the Antarctic seeds.
   await new CatalogService(catalogRepo, { fetchAllStations: vi.fn(async () => inventarioSample as never) }, () => NOW).sync();
 
-  const app = createApp(new AemetClient('https://aemet.invalid', 'unused-key'), { catalogRepo, stationDataService: service });
+  const app = createApp(new AemetClient('https://aemet.invalid', 'unused-key'), { catalogRepo, readingsRepo, stationDataService: service });
   return { app, cleanup: () => { readingsRepo.close(); catalogRepo.close(); rmSync(dir, { recursive: true, force: true }); } };
 }
 
@@ -108,5 +108,10 @@ describe('GET /api/datos', () => {
       samples: null,
       temperature: 13.2,
     });
+  });
+
+  it('reports liveness on /api/health', async () => {
+    const response = await request(stack.app).get('/api/health').expect(200);
+    expect(response.body).toEqual({ status: 'ok' });
   });
 });

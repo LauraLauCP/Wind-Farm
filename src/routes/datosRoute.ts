@@ -1,6 +1,7 @@
 import { type NextFunction, type Request, type Response, Router } from 'express';
 import { badRequest } from '../domain/errors.js';
 import type { StationCatalogRepository } from '../storage/stationCatalogRepository.js';
+import type { ReadingsRepository } from '../storage/readingsRepository.js';
 import type { StationDataService } from '../services/stationDataService.js';
 import type { Aggregation } from '../services/aggregationService.js';
 import { OUTPUT_TIMEZONE, parseInputDateTime, toOutputIso } from '../services/timeService.js';
@@ -9,6 +10,7 @@ import { parseRouteQuery, parseTypes, pathParam } from './requestParsing.js';
 /** Dependencies of the generalized data route, injected by the app factory. */
 export interface DatosDependencies {
   readonly catalogRepo: StationCatalogRepository;
+  readonly readingsRepo: ReadingsRepository;
   readonly stationDataService: StationDataService;
 }
 

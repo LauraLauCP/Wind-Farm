@@ -106,6 +106,15 @@ export class ReadingsRepository {
     return row ? fromStorageInstant(row.synced_at) : null;
   }
 
+  /** Cheap liveness probe for /health: the DB connection answers a trivial query. */
+  isHealthy(): boolean {
+    try {
+      return this.db.prepare('SELECT 1 AS ok').get() !== undefined;
+    } catch {
+      return false;
+    }
+  }
+
   close(): void {
     this.db.close();
   }

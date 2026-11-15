@@ -8,6 +8,12 @@ const EnvSchema = z.object({
   AEMET_BASE_URL: z.string().min(1).default('https://opendata.aemet.es/opendata/api'),
   /** Port our HTTP server listens on. */
   PORT: z.coerce.number().int().positive().default(3000),
+  /** Path of the SQLite cache database (Q12: single-process deployment). */
+  DB_PATH: z.string().min(1).default('./data/windfarm.sqlite'),
+  /** Log level (pino): 'trace' | 'debug' | 'info' | 'warn' | 'error'. */
+  LOG_LEVEL: z.string().min(1).default('info'),
+  /** Max concurrent upstream AEMET requests (Q6: backpressure). */
+  AEMET_MAX_CONCURRENT: z.coerce.number().int().positive().default(3),
 });
 
 export type Env = z.infer<typeof EnvSchema>;
