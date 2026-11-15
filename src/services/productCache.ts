@@ -34,6 +34,9 @@ export type ChunkFetcher = (start: DateTime, end: DateTime) => Promise<readonly 
  * no longer fresh. Chunked, gap-aware and auditable via `range_sync`.
  */
 export class ProductCache {
+  /** In-flight fetches per chunk (Q11: single-flight stampede protection). */
+  private readonly inFlight = new Map<string, Promise<void>>();
+
   constructor(
     private readonly stationId: string,
     private readonly repo: ReadingsRepository,
@@ -55,24 +58,47 @@ export class ProductCache {
         syncedAt !== null &&
         (immutable || now.diff(syncedAt).toMillis() < this.policy.ttlMs);
 
-      if (!fresh) {
-        try {
-          const readings = await this.fetchChunk(chunk.start, chunk.end);
-          this.repo.upsertReadings(this.stationId, readings);
-          const syncedNow = this.now();
-          this.repo.recordSync(this.stationId, this.policy.product, chunk.start, chunk.end, syncedNow);
-          newestSync = newestSync === null ? syncedNow : DateTime.max(newestSync, syncedNow);
-        } catch {
-          // Q8: an upstream failure never wipes usable data; fall back to
-          // whatever is stored and flag the response as stale.
-          stale = true;
-        }
-      } else if (syncedAt !== null) {
+      if (fresh && syncedAt !== null) {
         newestSync = newestSync === null ? syncedAt : DateTime.max(newestSync, syncedAt);
+        continue;
+      }
+
+      // Missing or stale chunk: fetch it (Q11: concurrent callers of the same
+      // chunk share one in-flight fetch instead of stampeding the upstream).
+      const key = `${chunk.start.toUTC().toMillis()}-${chunk.end.toUTC().toMillis()}`;
+      let task = this.inFlight.get(key);
+      if (task === undefined) {
+        task = this.refreshChunk(chunk.start, chunk.end);
+        this.inFlight.set(key, task);
+        task.finally(() => this.inFlight.delete(key)).catch(() => {});
+      }
+      await task;
+
+      const stampAfter = this.repo.getSyncStamp(this.stationId, this.policy.product, chunk.start, chunk.end);
+      if (stampAfter !== null && (syncedAt === null || stampAfter > syncedAt)) {
+        // The refresh succeeded (a newer sync stamp was recorded).
+        newestSync = newestSync === null ? stampAfter : DateTime.max(newestSync, stampAfter);
+      } else {
+        // Q8: the refresh failed; serve whatever is stored and flag it stale.
+        stale = true;
+        if (syncedAt !== null) {
+          newestSync = newestSync === null ? syncedAt : DateTime.max(newestSync, syncedAt);
+        }
       }
     }
 
     const readings = this.repo.readRange(this.stationId, startUtc, endUtc);
     return { readings, stale, lastSyncedAt: newestSync };
+  }
+
+  /** Fetches, stores and records the sync of one chunk; never rejects (failure is detected via the unchanged stamp). */
+  private async refreshChunk(start: DateTime, end: DateTime): Promise<void> {
+    try {
+      const readings = await this.fetchChunk(start, end);
+      this.repo.upsertReadings(this.stationId, readings);
+      this.repo.recordSync(this.stationId, this.policy.product, start, end, this.now());
+    } catch {
+      // Swallow: the caller detects the failure through the missing/unchanged sync stamp.
+    }
   }
 }
