@@ -4,6 +4,7 @@ import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
 import { requestLogger } from './middleware/requestLogger.js';
 import { antartidaRouter } from './routes/antartidaRoute.js';
 import { datosRouter, type DatosDependencies } from './routes/datosRoute.js';
+import { estacionesRouter } from './routes/estacionesRoute.js';
 import { healthRouter } from './routes/healthRoute.js';
 
 /**
@@ -24,6 +25,7 @@ export function createApp(
   if (datos !== undefined) {
     app.use('/api', datosRouter(datos));
     app.use('/api', healthRouter(datos));
+    app.use('/api', estacionesRouter({ catalogRepo: datos.catalogRepo }));
   }
 
   app.use(notFoundHandler);

@@ -97,6 +97,45 @@ export class StationCatalogRepository {
     };
   }
 
+  /** Lists catalog stations, ordered by id, optionally filtered by a
+   * case-insensitive substring over id, name, or province, and capped by
+   * `limit` (Part 3 station picker). */
+  searchStations(search?: string, limit = 100): StationRecord[] {
+    const term = search?.trim().toLowerCase();
+    const rows = this.db
+      .prepare<{ term: string | null; limit: number }, {
+        id: string;
+        name: string;
+        province: string | null;
+        latitude: number | null;
+        longitude: number | null;
+        source_strategy: SourceStrategy;
+        aggregation_timezone: string;
+        synced_at: string | null;
+      }>(
+        `SELECT * FROM stations
+         WHERE (
+           :term IS NULL
+           OR LOWER(id) LIKE '%' || :term || '%'
+           OR LOWER(name) LIKE '%' || :term || '%'
+           OR LOWER(province) LIKE '%' || :term || '%'
+         )
+         ORDER BY id
+         LIMIT :limit`,
+      )
+      .all({ term: term ?? null, limit });
+    return rows.map((row) => ({
+      id: row.id,
+      name: row.name,
+      province: row.province,
+      latitude: row.latitude,
+      longitude: row.longitude,
+      sourceStrategy: row.source_strategy,
+      aggregationTimezone: row.aggregation_timezone,
+      syncedAt: row.synced_at ? DateTime.fromISO(row.synced_at, { zone: 'utc' }) : null,
+    }));
+  }
+
   /** Cheap liveness probe for /health: the DB connection answers a trivial query. */
   isHealthy(): boolean {
     try {
