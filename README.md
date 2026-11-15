@@ -1,11 +1,25 @@
-# Wind Farm API — Part 1 + Part 2
+# Wind Farm API — Part 1 + Part 2 + Part 3
 
 A Node.js + TypeScript web API that retrieves historical weather data from
 AEMET (the Spanish Meteorological Agency) for the Business Development team's
 wind farm feasibility study — Part 1 for the two Spanish Antarctic stations,
-Part 2 (this iteration) for **all ~926 AEMET stations**, served through a
-**SQLite read-through cache** with structured logging, so thousands of
-internal requests never overload the AEMET OpenData API.
+Part 2 for **all ~926 AEMET stations** served through a **SQLite read-through
+cache** with structured logging, and Part 3 (this iteration) a **React SPA**
+to query the data in a table and charts.
+
+Part 3 requirements covered:
+
+- **Front-end service**: a React 19 + Vite + TypeScript SPA (`frontend/`)
+  where the user picks any catalog station, a time range, an aggregation and
+  data types, and reads the result as **small-multiple line charts** and a
+  **sortable, paginated table**
+- **Supporting endpoint**: `GET /api/estaciones` (searchable station catalog
+  for the picker)
+- **Cache honesty in the UI**: stale/partial chips, last-synced time, and
+  per-row granularity (10-min observations vs. daily climatology) are
+  surfaced, never hidden
+- **Production wiring**: one process serves API + built SPA; `npm run dev:all`
+  for development
 
 Part 2 requirements covered:
 
@@ -29,8 +43,9 @@ Part 2 requirements covered:
 | Storage | SQLite via better-sqlite3 (WAL, migrations) |
 | Logging | pino |
 | HTTP client | Native `fetch` |
-| Tests | Vitest + Supertest (64 passing, zero network) |
-| Dev workflow | `tsx watch` (dev), `tsc` (build) |
+| Tests | Vitest + Supertest (backend, zero network) · Vitest + Testing Library (frontend) |
+| Front-end | React 19 + Vite + Recharts SPA in `frontend/` |
+| Dev workflow | `tsx watch` (dev), `tsc` (build), `npm run dev:all` (API + SPA) |
 
 ## Getting started
 
@@ -46,20 +61,23 @@ Part 2 requirements covered:
 
    ```bash
    npm install
-   npm run dev     # development, auto-reload: http://localhost:3000
+   npm run dev        # API only, auto-reload: http://localhost:3000
+   npm run dev:all    # API + front-end dev server: http://localhost:5173
    ```
 
-   Or the production way:
+   Or the production way (one process serves API **and** the built SPA):
 
    ```bash
-   npm run build
-   npm start
+   npm run build:all  # compiles the backend and bundles the SPA
+   npm start          # http://localhost:3000 — API + front-end together
    ```
 
 4. Run the tests (they never touch the real AEMET API):
 
    ```bash
-   npm test
+   npm test           # backend suite
+   npm --prefix frontend test   # front-end suite
+   npm run test:all   # both
    ```
 
 The SQLite cache lives at `DB_PATH` (default `./data/windfarm.sqlite`,
@@ -159,6 +177,28 @@ dataset (no cache metadata). New consumers should use `/api/datos`.
 GET /api/health   ->  200 {"status":"ok"}  |  503 {"status":"error"}
 ```
 
+### Station catalog (Part 3, supports the front-end picker)
+
+```
+GET /api/estaciones?search=juan&limit=20
+```
+
+- `search` (optional) — case-insensitive substring over the station id,
+  name, or province.
+- `limit` (optional) — max results, 1–500, default 100 (keeps picker
+  responses bounded; a `limit` that is not a positive integer is a
+  `400 bad_request`).
+
+```json
+{
+  "count": 1,
+  "stations": [
+    { "id": "89064", "name": "JUAN CARLOS I", "province": null,
+      "latitude": -62.66, "longitude": -60.39 }
+  ]
+}
+```
+
 ### Errors
 
 Every error is a JSON envelope: `{"error": {"code": "...", "message": "..."}}`.
@@ -173,7 +213,38 @@ Every error is a JSON envelope: `{"error": {"code": "...", "message": "..."}}`.
 | 502/503 | `aemet_*` | Other upstream failures |
 | 500 | `internal_error` | Unexpected server error (details logged, never leaked) |
 
-## Design decisions (Part 2)
+## Design decisions (Part 3 — front-end)
+
+- **React 19 + Vite + TypeScript SPA** (`frontend/`): one language across
+  the whole project, and the API contract is mirrored in typed interfaces
+  (`frontend/src/api/contract.ts`) so the compiler catches drift.
+- **Small multiples, never a dual axis:** the three measurements have
+  incompatible units (°C / hPa / m/s), so each gets its own synced chart
+  with its own unit — the #1 charting mistake (two y-scales on one plot)
+  is avoided by construction.
+- **Validated palette:** the series colors (temperature `#055C8A`,
+  pressure `#1AA9C9`, speed `#5D8A40`) are the brand colors snapped to the
+  nearest step that passes the dataviz six-checks validator (lightness
+  band, chroma floor, CVD separation ≥8 ΔE, normal-vision ≥15 ΔE,
+  contrast); the pressure cyan's contrast WARN is covered by direct chart
+  titles and the table view. Status is never color-alone — every cache
+  chip carries its label.
+- **DST-correct by construction:** the default range is computed per
+  endpoint in the offset in force on that date (`Intl`), and the table's
+  datetime sort compares **instants**, so the repeated wall-clock hour of
+  the DST fall-back orders correctly.
+- **No client state library:** a small `useDataset` hook with
+  `AbortController` (changing filters cancels the in-flight request) —
+  one kind of query doesn't justify TanStack Query.
+- **Honest granularity in the UI:** the table shows each row's tier
+  (10 min vs. daily) and a status chip explains mixed-granularity
+  responses, because a daily mean and a 10-minute reading are different
+  kinds of facts.
+- **Served by the API process in production:** `express.static` mounts
+  `frontend/dist` only when it exists, so a backend-only checkout still
+  boots cleanly.
+
+
 
 - **Read-through, not prefetch:** every range is served from SQLite; only
   chunks that are missing or no longer fresh trigger an upstream fetch. A
@@ -237,7 +308,7 @@ src/
   services/        # time parsing/DST, aggregation, read-through product cache,
                    #   station catalog sync, two-tier composite dataset service
   routes/          # antartida route (Part 1), datos route (Part 2), health,
-                   #   shared request parsing
+                   #   estaciones route (Part 3), shared request parsing
   middleware/      # request logging, central error handler
   app.ts           # Express application factory (everything injected)
   server.ts        # bootstrap: wiring, catalog sync, graceful shutdown
@@ -249,6 +320,15 @@ tests/
   productCache (freshness, TTL, single-flight, serve-stale)
   stationDataService (two-tier merge, boundary semantics)
   datosApi (full HTTP stack, cache metadata contract, /health)
+  estacionesApi (Part 3 picker endpoint: search, limit, validation)
+
+frontend/               # Part 3 SPA (React 19 + Vite + TypeScript)
+  src/api/        # typed contract mirror + fetch client + query builder
+  src/components/ # station picker, cache status, charts, table (+ helpers)
+  src/hooks/      # useDataset (abortable), useStations (debounced search)
+  src/lib/        # dates (default range, wall-time formatting), display labels
+  src/App.tsx     # form state → query → results pipeline
+  src/*.test.*    # unit tests per module + App smoke test
 ```
 
 ## Limitations / TODOs
@@ -259,4 +339,9 @@ tests/
 - [ ] Catalog refresh is a plain interval; a pub/sub or admin endpoint
       could force-refresh on demand.
 - [ ] No request rate limiting of our own API (consumers are internal).
-- [ ] Part 3 (front-end) not started.
+- [ ] Front-end: dark mode (tokens are structured for it, but the steps
+      must be re-validated against a dark surface, not auto-flipped).
+- [ ] Front-end: the Recharts bundle is ~500 kB minified; code-splitting
+      it (dynamic import) would improve first load.
+- [ ] Front-end: a station map picker (lat/lon is already in the catalog
+      endpoint response) would be a nice upgrade over the search box.
