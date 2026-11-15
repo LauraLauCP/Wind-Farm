@@ -1,55 +1,12 @@
 import { type NextFunction, type Request, type Response, Router } from 'express';
-import { z } from 'zod';
 import type { AemetReadingsFetcher } from '../client/aemetClient.js';
-import { DATA_TYPES, isDataType, type DataType } from '../domain/dataTypes.js';
+import { type DataType } from '../domain/dataTypes.js';
 import { badRequest } from '../domain/errors.js';
 import { findStation, validStationIds } from '../domain/stations.js';
-import { AGGREGATIONS, type Aggregation } from '../services/aggregationService.js';
+import { type Aggregation } from '../services/aggregationService.js';
 import { buildDataset } from '../services/antartidaService.js';
 import { parseInputDateTime } from '../services/timeService.js';
-
-/** Query strings are plain strings for us, even when repeated (?types=a&types=b → first wins). */
-const firstValue = (value: unknown) => (Array.isArray(value) ? value[0] : value);
-
-const QuerySchema = z.object({
-  location: z.preprocess(firstValue, z.string().trim().optional()),
-  aggregation: z.preprocess(firstValue, z.enum(AGGREGATIONS).optional()),
-  types: z.preprocess(firstValue, z.string().trim().optional()),
-});
-
-/**
- * Parses the "types" query parameter: a comma-separated list of data types.
- * Absent or empty means "all data types" (challenge requirement).
- */
-function parseTypes(raw: string | undefined): DataType[] {
-  if (raw === undefined || raw === '') {
-    return [...DATA_TYPES];
-  }
-  const requested = [
-    ...new Set(
-      raw
-        .split(',')
-        .map((type) => type.trim().toLowerCase())
-        .filter((type) => type !== ''),
-    ),
-  ];
-  const invalid = requested.filter((type) => !isDataType(type));
-  if (invalid.length > 0) {
-    throw badRequest(
-      `Invalid data type(s): ${invalid.join(', ')}. Valid types: ${DATA_TYPES.join(', ')}.`,
-    );
-  }
-  return requested.filter(isDataType);
-}
-
-/**
- * Extracts a single path parameter. Express 5 types allow `string[]` there
- * (repeated segments), so we normalize to the first value.
- */
-function pathParam(req: Request, name: string): string {
-  const value = req.params[name];
-  return Array.isArray(value) ? value[0] ?? '' : value ?? '';
-}
+import { parseRouteQuery, parseTypes, pathParam } from './requestParsing.js';
 
 export function antartidaRouter(fetcher: AemetReadingsFetcher): Router {
   const router = Router();
@@ -69,11 +26,7 @@ async function handleAntartidaRequest(
   res: Response,
   fetcher: AemetReadingsFetcher,
 ): Promise<void> {
-  const parsedQuery = QuerySchema.safeParse(req.query);
-  if (!parsedQuery.success) {
-    throw badRequest('Invalid query parameters.', parsedQuery.error.issues);
-  }
-  const query = parsedQuery.data;
+  const query = parseRouteQuery(req);
 
   const station = findStation(pathParam(req, 'estacion'));
   if (station === undefined) {
