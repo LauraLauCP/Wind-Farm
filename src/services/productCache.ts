@@ -14,6 +14,12 @@ export interface ProductPolicy {
   readonly ttlMs: number;
   /** Chunk width in days, aligned with the product's upstream request cap. */
   readonly chunkDays: number;
+  /**
+   * How far before the requested start to read stored rows back. Daily
+   * summaries anchor to the local-midnight instant, which can fall before
+   * the UTC range start while the local day still overlaps it.
+   */
+  readonly readPadMs?: number;
 }
 
 /** Result of serving a range through the cache. */
@@ -87,7 +93,8 @@ export class ProductCache {
       }
     }
 
-    const readings = this.repo.readRange(this.stationId, startUtc, endUtc);
+    const pad = this.policy.readPadMs ?? 0;
+    const readings = this.repo.readRange(this.stationId, startUtc.minus(pad), endUtc);
     return { readings, stale, lastSyncedAt: newestSync };
   }
 
