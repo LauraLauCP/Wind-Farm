@@ -1,0 +1,29 @@
+[
+  {
+    "latitud": "394924N",
+    "provincia": "ILLES BALEARS",
+    "altitud": "490",
+    "indicativo": "B013X",
+    "nombre": "ESCORCA, LLUC",
+    "indsinop": "08304",
+    "longitud": "025309E"
+  },
+  {
+    "latitud": "285811N",
+    "provincia": "LAS PALMAS",
+    "altitud": "376",
+    "indicativo": "C018J",
+    "nombre": "TÍAS",
+    "indsinop": "",
+    "longitud": "134125W"
+  },
+  {
+    "latitud": "390020N",
+    "provincia": "ALBACETE",
+    "altitud": "674",
+    "indicativo": "8178D",
+    "nombre": "ALBACETE",
+    "indsinop": "08279",
+    "longitud": "015144W"
+  }
+]
