@@ -7,6 +7,21 @@ Part 2 for **all ~926 AEMET stations** served through a **SQLite read-through
 cache** with structured logging, and Part 3 (this iteration) a **React SPA**
 to query the data in a table and charts.
 
+## How to review each part (tag layout)
+
+The challenge parts are cumulative, each marked with a tag on `master`:
+
+| Tag | Contents |
+|---|---|
+| `part-1` | **Part 1 only** — the original Antarctic stations API |
+| `part-2` | **Part 1 + Part 2** — adds the SQLite read-through cache and all stations |
+| `part-3` *(tip of `master`)* | **Everything** — adds the React SPA front-end |
+
+To see exactly what a part added, compare tags, e.g. `git diff part-1..part-2`
+or `git diff part-2..part-3` (on GitHub:
+[Part 2's changes](../../compare/part-1...part-2) or
+[Part 3's changes](../../compare/part-2...part-3)).
+
 Part 3 requirements covered:
 
 - **Front-end service**: a React 19 + Vite + TypeScript SPA (`frontend/`)
