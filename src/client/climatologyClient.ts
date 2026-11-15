@@ -24,6 +24,23 @@ interface AemetEnvelope {
 
 type AemetRawRecord = Record<string, unknown>;
 
+/**
+ * AEMET serves daily climatology with a practical ~10-day cap per request,
+ * so a range is split into consecutive windows of at most 10 days.
+ */
+const MAX_WINDOW_DAYS = 10;
+
+function splitIntoWindows(startUtc: DateTime, endUtc: DateTime): Array<{ start: DateTime; end: DateTime }> {
+  const windows: Array<{ start: DateTime; end: DateTime }> = [];
+  let cursor = startUtc;
+  while (cursor < endUtc) {
+    const windowEnd = DateTime.min(cursor.plus({ days: MAX_WINDOW_DAYS }), endUtc);
+    windows.push({ start: cursor, end: windowEnd });
+    cursor = windowEnd;
+  }
+  return windows;
+}
+
 /** Maps one raw climatology record to our daily data types. */
 function toDailyRecord(record: AemetRawRecord): DailyClimatologyRecord {
   const presMax = parseNumber(record['presMax']);
@@ -51,28 +68,34 @@ export class ClimatologyClient {
    * the live API is verified to accept that form.
    */
   async fetchDaily(startUtc: DateTime, endUtc: DateTime, idema: string): Promise<DailyClimatologyRecord[]> {
-    const ini = encodeURIComponent(startUtc.toUTC().toFormat("yyyy-MM-dd'T'HH:mm:ss'UTC'"));
-    const fin = encodeURIComponent(endUtc.toUTC().toFormat("yyyy-MM-dd'T'HH:mm:ss'UTC'"));
-    const url =
-      `${this.baseUrl}/valores/climatologicos/diarios/datos/fechaini/${ini}` +
-      `/fechafin/${fin}/estacion/${encodeURIComponent(idema)}` +
-      `?api_key=${encodeURIComponent(this.apiKey)}`;
+    const collected: DailyClimatologyRecord[] = [];
+    for (const window of splitIntoWindows(startUtc, endUtc)) {
+      const ini = encodeURIComponent(window.start.toUTC().toFormat("yyyy-MM-dd'T'HH:mm:ss'UTC'"));
+      const fin = encodeURIComponent(window.end.toUTC().toFormat("yyyy-MM-dd'T'HH:mm:ss'UTC'"));
+      const url =
+        `${this.baseUrl}/valores/climatologicos/diarios/datos/fechaini/${ini}` +
+        `/fechafin/${fin}/estacion/${encodeURIComponent(idema)}` +
+        `?api_key=${encodeURIComponent(this.apiKey)}`;
 
-    const envelope = await this.getJson<AemetEnvelope>(url);
-    if (envelope.estado !== 200 || typeof envelope.datos !== 'string') {
-      // AEMET reports "no data" as HTTP 200 + estado 404 in the envelope (verified quirk).
-      if (envelope.estado === 404) {
-        throw new HttpError(404, 'no_data', 'AEMET has no climatology for the requested station and time range.');
+      const envelope = await this.getJson<AemetEnvelope>(url);
+      if (envelope.estado !== 200 || typeof envelope.datos !== 'string') {
+        // AEMET reports "no data" as HTTP 200 + estado 404 in the envelope (verified quirk).
+        if (envelope.estado === 404) {
+          throw new HttpError(404, 'no_data', 'AEMET has no climatology for the requested station and time range.');
+        }
+        throw new HttpError(
+          502,
+          'aemet_upstream_error',
+          `AEMET responded with estado ${String(envelope.estado)}: ${String(envelope.descripcion)}`,
+        );
       }
-      throw new HttpError(
-        502,
-        'aemet_upstream_error',
-        `AEMET responded with estado ${String(envelope.estado)}: ${String(envelope.descripcion)}`,
-      );
-    }
 
-    const data = await this.getJson<AemetRawRecord[]>(envelope.datos);
-    return (Array.isArray(data) ? data : []).map(toDailyRecord);
+      const data = await this.getJson<AemetRawRecord[]>(envelope.datos);
+      collected.push(...(Array.isArray(data) ? data : []).map(toDailyRecord));
+    }
+    // Merge windows: sort chronologically, dedupe a date repeated at a window boundary.
+    collected.sort((a, b) => a.date.localeCompare(b.date));
+    return collected.filter((record, i) => i === 0 || record.date !== collected[i - 1]?.date);
   }
 
   /** GETs an AEMET JSON resource, translating transport failures into typed errors. */
