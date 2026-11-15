@@ -4,11 +4,7 @@ import { createApp } from '../src/app.js';
 import type { AemetRawReading, AemetReadingsFetcher } from '../src/client/aemetClient.js';
 import { HttpError } from '../src/domain/errors.js';
 
-/**
- * Raw readings shaped like the real AEMET "datos" resource, deliberately
- * straddling the Madrid spring DST transition of 2026-03-29 (01:00 UTC).
- * Values use the decimal comma AEMET emits ("1,5") to exercise the parser.
- */
+
 const rawReadings: AemetRawReading[] = [
   { nombre: 'JUAN CARLOS I', fhora: '2026-03-28T22:00:00', temp: '1,5', pres: '986', vel: '5' },
   { nombre: 'JUAN CARLOS I', fhora: '2026-03-28T22:10:00', temp: '2,5', pres: '986', vel: '6' },
@@ -40,7 +36,7 @@ describe('GET /api/antartida/datos/...', () => {
     expect(response.body.data).toHaveLength(6);
 
     const first = response.body.data[0];
-    // 22:00 UTC on the 28th is 23:00 CET (+01:00).
+    
     expect(first).toEqual({
       datetime: '2026-03-28T23:00:00+01:00',
       samples: 1,
@@ -49,7 +45,7 @@ describe('GET /api/antartida/datos/...', () => {
       speed: 5,
     });
 
-    // The fetcher must be called with the station's AEMET id and UTC instants.
+    
     expect(fetcher.fetchReadings).toHaveBeenCalledTimes(1);
     const [startUtc, endUtc, aemetId] = (fetcher.fetchReadings as ReturnType<typeof vi.fn>).mock.calls[0];
     expect(startUtc.toISO()).toBe('2026-03-28T22:00:00.000Z');

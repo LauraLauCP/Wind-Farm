@@ -58,14 +58,14 @@ describe('toOutputIso (Europe/Madrid, DST aware)', () => {
   });
 
   it('handles the spring DST transition (2026-03-29: 02:00 CET → 03:00 CEST)', () => {
-    // Half an hour before the transition: still CET.
+    
     expect(toOutputIso(DateTime.fromISO('2026-03-29T00:30:00Z'))).toBe('2026-03-29T01:30:00+01:00');
-    // Half an hour after: already CEST, local 02:30 does not exist.
+    
     expect(toOutputIso(DateTime.fromISO('2026-03-29T01:30:00Z'))).toBe('2026-03-29T03:30:00+02:00');
   });
 
   it('handles the autumn DST transition (2026-10-25: 03:00 CEST → 02:00 CET)', () => {
-    // Both instants land on local 02:30, but with different offsets.
+    
     expect(toOutputIso(DateTime.fromISO('2026-10-25T00:30:00Z'))).toBe('2026-10-25T02:30:00+02:00');
     expect(toOutputIso(DateTime.fromISO('2026-10-25T01:30:00Z'))).toBe('2026-10-25T02:30:00+01:00');
   });

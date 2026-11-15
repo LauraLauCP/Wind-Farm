@@ -84,6 +84,28 @@ export class ReadingsRepository {
     }));
   }
 
+  /** Records that a (station, product, chunk) was successfully synchronized at the given instant. */
+  recordSync(stationId: string, product: ProductName, startUtc: DateTime, endUtc: DateTime, syncedAt: DateTime): void {
+    this.db
+      .prepare(
+        `INSERT INTO range_sync (station_id, product, chunk_start, chunk_end, synced_at)
+         VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT (station_id, product, chunk_start, chunk_end) DO UPDATE SET synced_at = excluded.synced_at`,
+      )
+      .run(stationId, product, toStorageInstant(startUtc), toStorageInstant(endUtc), toStorageInstant(syncedAt));
+  }
+
+  /** Returns when a (station, product, chunk) was last synchronized, or null if never. */
+  getSyncStamp(stationId: string, product: ProductName, startUtc: DateTime, endUtc: DateTime): DateTime | null {
+    const row = this.db
+      .prepare<[string, string, string, string], { synced_at: string }>(
+        `SELECT synced_at FROM range_sync
+         WHERE station_id = ? AND product = ? AND chunk_start = ? AND chunk_end = ?`,
+      )
+      .get(stationId, product, toStorageInstant(startUtc), toStorageInstant(endUtc));
+    return row ? fromStorageInstant(row.synced_at) : null;
+  }
+
   close(): void {
     this.db.close();
   }

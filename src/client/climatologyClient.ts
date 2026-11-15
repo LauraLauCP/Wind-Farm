@@ -1,6 +1,7 @@
 import { DateTime } from 'luxon';
 import { env } from '../config/env.js';
 import { HttpError } from '../domain/errors.js';
+import { splitIntoWindows } from '../domain/timeWindows.js';
 import { parseNumber } from '../services/antartidaService.js';
 
 /** One day of daily climatology, already mapped to the API's data types. */
@@ -30,17 +31,6 @@ type AemetRawRecord = Record<string, unknown>;
  */
 const MAX_WINDOW_DAYS = 10;
 
-function splitIntoWindows(startUtc: DateTime, endUtc: DateTime): Array<{ start: DateTime; end: DateTime }> {
-  const windows: Array<{ start: DateTime; end: DateTime }> = [];
-  let cursor = startUtc;
-  while (cursor < endUtc) {
-    const windowEnd = DateTime.min(cursor.plus({ days: MAX_WINDOW_DAYS }), endUtc);
-    windows.push({ start: cursor, end: windowEnd });
-    cursor = windowEnd;
-  }
-  return windows;
-}
-
 /** Maps one raw climatology record to our daily data types. */
 function toDailyRecord(record: AemetRawRecord): DailyClimatologyRecord {
   const presMax = parseNumber(record['presMax']);
@@ -69,7 +59,7 @@ export class ClimatologyClient {
    */
   async fetchDaily(startUtc: DateTime, endUtc: DateTime, idema: string): Promise<DailyClimatologyRecord[]> {
     const collected: DailyClimatologyRecord[] = [];
-    for (const window of splitIntoWindows(startUtc, endUtc)) {
+    for (const window of splitIntoWindows(startUtc, endUtc, MAX_WINDOW_DAYS)) {
       const ini = encodeURIComponent(window.start.toUTC().toFormat("yyyy-MM-dd'T'HH:mm:ss'UTC'"));
       const fin = encodeURIComponent(window.end.toUTC().toFormat("yyyy-MM-dd'T'HH:mm:ss'UTC'"));
       const url =

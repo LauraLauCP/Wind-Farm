@@ -21,7 +21,7 @@ function reading(
 
 const STATION_TZ = 'UTC';
 
-// Six 10-minute readings in the same UTC hour, with some missing values.
+
 const oneHour: NormalizedReading[] = [
   reading('2026-10-01T10:00:00Z', { temperature: 10, pressure: 1000, speed: 5 }),
   reading('2026-10-01T10:10:00Z', { temperature: 12, pressure: 1004, speed: 7 }),
@@ -56,17 +56,19 @@ describe('aggregateReadings — none', () => {
 describe('aggregateReadings — hourly', () => {
   it('averages the valid samples of the hour, skipping missing values', () => {
     const rows = aggregateReadings(oneHour, 'hourly', STATION_TZ, ['temperature', 'pressure', 'speed']);
+   
     expect(rows).toHaveLength(1);
 
     const row = rows[0]!;
+
     expect(row.samples).toBe(6);
-    // temperature: (10 + 12 + 14 + 16 + 18) / 5 — the null is skipped, not zero.
+    
     expect(row.temperature).toBe(14);
-    // pressure: (1000 + 1004 + 1002 + 1006 + 1008) / 5.
+    
     expect(row.pressure).toBe(1004);
-    // speed: (5 + 7 + 4 + 6 + 8 + 10) / 6.
+    
     expect(row.speed).toBe(6.67);
-    // Bucket start 10:00 UTC → Madrid 12:00 CEST (+02:00).
+    
     expect(row.datetime).toBe('2026-10-01T12:00:00+02:00');
   });
 

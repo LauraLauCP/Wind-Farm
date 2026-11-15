@@ -3,11 +3,7 @@ import { DateTime } from 'luxon';
 import { AemetClient } from '../src/client/aemetClient.js';
 import { HttpError } from '../src/domain/errors.js';
 
-// The AEMET client is the only piece that talks HTTP for real — these tests
-// pin the quirks of the live API (verified against opendata.aemet.es):
-//   1. dates in the path carry the literal "UTC" suffix,
-//   2. every call returns an envelope whose "datos" field is a second URL,
-//   3. "no data" comes as HTTP 200 + estado 404 inside the envelope.
+
 
 function fakeFetch(responses: Record<string, unknown>): ReturnType<typeof vi.fn> {
   return vi.fn(async (url: unknown) => {
