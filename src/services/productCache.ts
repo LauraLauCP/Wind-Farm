@@ -57,7 +57,14 @@ export class ProductCache {
     let stale = false;
     let newestSync: DateTime | null = null;
 
-    for (const chunk of splitIntoWindows(startUtc, endUtc, this.policy.chunkDays)) {
+    // Chunk boundaries snap to an hour grid: requests that differ by a few
+    // minutes (traders polling "recent data") produce identical chunk keys,
+    // so the mutable tail actually benefits from the TTL instead of being
+    // re-fetched on every request. The <=1h over-fetch is clamped on readback.
+    const fetchStart = startUtc.toUTC().startOf('hour');
+    const fetchEnd = endUtc.toUTC().plus({ milliseconds: 1 }).startOf('hour');
+
+    for (const chunk of splitIntoWindows(fetchStart, fetchEnd, this.policy.chunkDays)) {
       const immutable = chunk.end <= mutableSince;
       const syncedAt = this.repo.getSyncStamp(this.stationId, this.policy.product, chunk.start, chunk.end);
       const fresh =

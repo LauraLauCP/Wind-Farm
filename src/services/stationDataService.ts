@@ -115,7 +115,9 @@ export class StationDataService {
   /** Composite split (Q9): observations own the last ~24 h, climatology the rest. */
   private compositeRanges(startUtc: DateTime, endUtc: DateTime): Array<{ product: ProductName; start: DateTime; end: DateTime }> {
     const now = this.now();
-    const obsStart = DateTime.max(startUtc, now.minus(OBSERVATION_WINDOW_MS));
+    // Clamp the recent window to the requested range: a query that ends
+    // before the last 24 h must not over-fetch history up to "now".
+    const obsStart = DateTime.max(startUtc, DateTime.min(endUtc, now.minus(OBSERVATION_WINDOW_MS)));
     const ranges: Array<{ product: ProductName; start: DateTime; end: DateTime }> = [];
     if (startUtc < obsStart) {
       ranges.push({ product: 'climatology', start: startUtc, end: obsStart });
