@@ -40,7 +40,7 @@ Before diving into the implementation, I'd like to explain the main technology c
 
 ### AI-assisted development
 
-I developed this project with AI assistance. Specifically, I used Claude Code as a coding agent, connected to Ollama through an Anthropic-compatible API and configured to use a GLM model from the Z.ai cloud provider.
+I developed this project with AI assistance. Specifically, I used Claude Code as a coding agent, configured to use GLM 5.3 running on Ollama's cloud servers.
 
 To stay actively involved in the decision-making process rather than simply accepting generated solutions, I also used two AI Hero skills:
 
