@@ -1,225 +1,351 @@
-# Wind Farm API — Part 1 + Part 2 + Part 3
+# About this project
 
-A Node.js + TypeScript web API that retrieves historical weather data from
-AEMET (the Spanish Meteorological Agency) for the Business Development team's
-wind farm feasibility study — Part 1 for the two Spanish Antarctic stations,
-Part 2 for **all ~926 AEMET stations** served through a **SQLite read-through
-cache** with structured logging, and Part 3 (this iteration) a **React SPA**
-to query the data in a table and charts.
+I developed this project as a technical assessment for an internship selection process. The internship would form part of the second year of my higher vocational training programme in Multi-platform Applications Development (DAM). The company is primarily focused on water management.
 
-## How to review each part (tag layout)
+## Technology choices
 
-The challenge parts are cumulative, each marked with a tag on `master`:
+Before diving into the implementation, I'd like to explain the main technology choices I made for this project and the reasoning behind them.
 
-| Tag | Contents |
-|---|---|
-| `part-1` | **Part 1 only** — the original Antarctic stations API |
-| `part-2` | **Part 1 + Part 2** — adds the SQLite read-through cache and all stations |
-| `part-3` *(tip of `master`)* | **Everything** — adds the React SPA front-end |
+### AI-assisted development
 
-To see exactly what a part added, compare tags, e.g. `git diff part-1..part-2`
-or `git diff part-2..part-3` (on GitHub:
-[Part 2's changes](../../compare/part-1...part-2) or
-[Part 3's changes](../../compare/part-2...part-3)).
+I developed this project with AI assistance. Specifically, I used Claude Code as a coding agent, connected to Ollama through an Anthropic-compatible API and configured to use a GLM model from the Z.ai cloud provider.
 
-Part 3 requirements covered:
+To stay actively involved in the decision-making process rather than simply accepting generated solutions, I also used two AI Hero skills:
 
-- **Front-end service**: a React 19 + Vite + TypeScript SPA (`frontend/`)
-  where the user picks any catalog station, a time range, an aggregation and
-  data types, and reads the result as **small-multiple line charts** and a
-  **sortable, paginated table**
-- **Supporting endpoint**: `GET /api/estaciones` (searchable station catalog
-  for the picker)
-- **Cache honesty in the UI**: stale/partial chips, last-synced time, and
-  per-row granularity (10-min observations vs. daily climatology) are
-  surfaced, never hidden
-- **Production wiring**: one process serves API + built SPA; `npm run dev:all`
-  for development
+- **"Grilling"**: to have the model ask me questions about important decisions, helping me explore the trade-offs and make my own informed choice.
+- **"TDD"**: as a reference for writing tests before implementing the code needed to pass them.
 
-Part 2 requirements covered:
+### Test-driven development
 
-- **SQLite storage** of everything read from the source API
-  (better-sqlite3, WAL, versioned migrations, prepared statements,
-  transactional upserts)
-- **Read-through caching** that never re-fetches what cannot have changed
-  (immutable history) and refreshes only the mutable tail on a TTL
-- **Proper logging** (pino, JSON, request ids — API keys are never logged)
-- **High availability**: stale data is served with an explicit flag when
-  the upstream fails; `/api/health` for monitoring
+I chose test-driven development (TDD) to support the challenge's testing requirements and keep the implementation focused on the expected behaviour. I used Vitest as the test runner and Supertest to test the API endpoints.
 
-## Stack
+Writing tests first helped me clarify requirements and think through edge cases before implementing each feature. The resulting test suite also provides a way to check for regressions when changing or refactoring the code.
 
-| Concern | Choice |
-|---|---|
-| Language | TypeScript (strict mode), ESM |
-| HTTP framework | Express 5 |
-| Validation | Zod |
-| Time zones / DST | Luxon |
-| Storage | SQLite via better-sqlite3 (WAL, migrations) |
-| Logging | pino |
-| HTTP client | Native `fetch` |
-| Tests | Vitest + Supertest (backend, zero network) · Vitest + Testing Library (frontend) |
-| Front-end | React 19 + Vite + Recharts SPA in `frontend/` |
-| Dev workflow | `tsx watch` (dev), `tsc` (build), `npm run dev:all` (API + SPA) |
+My aim was to build a codebase that is easier to maintain, extend, and document, with tests that describe how its main features are expected to behave.
 
-## Getting started
+### Node.js
 
-**Prerequisites:** Node.js ≥ 20 and npm.
+I chose Node.js as the backend runtime so I could use TypeScript across both the backend and frontend and work within the same package ecosystem.
 
-1. Get a free AEMET API key at
-   <https://opendata.aemet.es/centrodedescargas/inicio>
-   ⚠️ register with a **personal** e-mail account — corporate accounts are
-   blocked. **Since July 2026 new keys expire after 3 months** — renew when
-   upstream starts answering `aemet_invalid_api_key`.
-2. Copy `.env.example` to `.env` and paste your key.
-3. Install and run:
+### TypeScript
+
+I chose TypeScript for its static type checking and its suitability for a Node.js project. Compared with plain JavaScript, it helps catch issues such as incompatible assignments and unexpected function return types during development.
+
+TypeScript also shares some familiar concepts with Java, which is the programming language I use most often.
+
+### Express 5
+
+I chose Express 5 as the backend web framework.
+
+Fastify would also have been a reasonable option, but I opted for Express because of its flexibility, extensive documentation, and broad ecosystem. For this project, I wanted a framework that would let me organise the API clearly and extend it without introducing unnecessary complexity.
+
+### React 19 and Vite
+
+For the frontend, I chose a single-page application (SPA) built with React and TypeScript, using Vite for development and production builds.
+
+React's component-based approach helped me divide the interface into small, reusable pieces and address the challenge's emphasis on code organisation.
+
+### Project delivery
+
+To make the implementation easier to review, I committed the entire project to the master branch of the GitHub repository and created three tags to mark each stage: `part-1`, `part-2`, and `part-3`.
+
+### SQLite
+
+As required by the challenge, I used SQLite to store data retrieved from the source API and avoid overloading it. SQLite provides a small, fast, self-contained SQL database engine.
+
+## Part 1 - A humble beginning
+
+### Important decisions and requirements
+
+According to the API documentation, only two stations are available: Gabriel de Castilla and Juan Carlos I.
+
+The supported time aggregation options are `none`, `hourly`, `daily`, and `monthly`.
+
+The available data types are temperature, pressure, and speed. Users can select any combination of these three types; selecting none returns all three.
+
+The source API provides data at 10-minute intervals.
+
+Users can specify the following parameters:
+
+- **Datetime Start** with format `(AAAA-MM-DDTHH:MM:SS)`.
+- **Datetime End** with format `(AAAA-MM-DDTHH:MM:SS)`.
+- **Location** (optional parameter) should indicate the location of the datetimes sent, or, alternatively, the time zone shift in the datetimes.
+
+For this part, the following endpoint is required:
+
+```
+/api/antartida/datos/fechaini/{fechaIniStr}/fechafin/{fechaFinStr}/estacion/{identificacion}
+```
+
+### Running the application
+
+This API needs an AEMET API key to work. Copy `.env.example` to `.env` and fill in a key from the AEMET OpenData portal.
+
+1. Open a terminal in the `src` directory.
+2. Start the server:
 
    ```bash
-   npm install
-   npm run dev        # API only, auto-reload: http://localhost:3000
-   npm run dev:all    # API + front-end dev server: http://localhost:5173
+   npm run dev
    ```
 
-   Or the production way (one process serves API **and** the built SPA):
+3. Open another terminal to send requests to the API.
+
+### Checking the application's health
+
+```bash
+curl "http://localhost:3000/api/health"
+```
+
+### Retrieving data
+
+```bash
+curl "http://localhost:3000/api/antartida/datos/fechaini/2026-01-01T00:00:00/fechafin/2026-01-02T00:00:00/estacion/juan-carlos-i"
+```
+
+Gabriel de Castilla station:
+
+```bash
+curl "http://localhost:3000/api/antartida/datos/fechaini/2026-01-01T00:00:00/fechafin/2026-01-02T00:00:00/estacion/gabriel-de-castilla"
+```
+
+Gabriel de Castilla station using optional location parameter:
+
+```bash
+curl "http://localhost:3000/api/antartida/datos/fechaini/2026-01-01T00:00:00/fechafin/2026-01-02T00:00:00/estacion/gabriel-de-castilla?location=Europe/Madrid"
+```
+
+Gabriel de Castilla station using a UTC offset as the location value:
+
+```bash
+curl "http://localhost:3000/api/antartida/datos/fechaini/2026-01-01T00:00:00/fechafin/2026-01-02T00:00:00/estacion/gabriel-de-castilla?location=-05:30"
+```
+
+### Inspecting the response (Windows PowerShell)
+
+```powershell
+$base = "http://localhost:3000/api/antartida/datos/fechaini/2026-01-01T00:00:00/fechafin/2026-01-02T00:00:00/estacion/juan-carlos-i"
+
+Invoke-RestMethod -Uri $base
+```
+
+### Filtering the returned measurements (Windows PowerShell)
+
+All available measurements:
+
+```powershell
+(Invoke-RestMethod -Uri $base).data[0]
+```
+
+An empty types parameter also returns all available measurements:
+
+```powershell
+(Invoke-RestMethod -Uri "${base}?types=").data[0]
+```
+
+Only datetime, samples, and temperature:
+
+```powershell
+(Invoke-RestMethod -Uri "${base}?types=temperature").data[0]
+```
+
+Temperature and speed, without the pressure field:
+
+```powershell
+(Invoke-RestMethod -Uri "${base}?types=temperature,speed").data[0]
+```
+
+### Inspecting the response (Linux Bash)
+
+These examples use `jq` to display and filter JSON. If it is not installed, you can install it on systems that use `apt` with: `sudo apt install jq`
+
+```bash
+curl "http://localhost:3000/api/antartida/datos/fechaini/2026-01-01T00:00:00/fechafin/2026-01-02T00:00:00/estacion/juan-carlos-i" | jq .
+```
+
+### Filtering the returned measurements (Linux Bash)
+
+All available measurements:
+
+```bash
+curl "http://localhost:3000/api/antartida/datos/fechaini/2026-01-01T00:00:00/fechafin/2026-01-02T00:00:00/estacion/juan-carlos-i" | jq '.data[0]'
+```
+
+An empty types parameter also returns all available measurements:
+
+```bash
+curl "http://localhost:3000/api/antartida/datos/fechaini/2026-01-01T00:00:00/fechafin/2026-01-02T00:00:00/estacion/juan-carlos-i?types=" | jq '.data[0]'
+```
+
+Only datetime, samples, and temperature:
+
+```bash
+curl "http://localhost:3000/api/antartida/datos/fechaini/2026-01-01T00:00:00/fechafin/2026-01-02T00:00:00/estacion/juan-carlos-i?types=temperature" | jq '.data[0]'
+```
+
+Temperature and speed, without the pressure field:
+
+```bash
+curl "http://localhost:3000/api/antartida/datos/fechaini/2026-01-01T00:00:00/fechafin/2026-01-02T00:00:00/estacion/juan-carlos-i?types=temperature,speed" | jq '.data[0]'
+```
+
+### Confirming the behaviour during Daylight-Saving Time (DST) (Linux Bash)
+
+I used the Luxon library to work with dates and times.
+
+I checked this using the Auckland time zone, which observes daylight saving time in January (NZDT, UTC+13:00):
+
+```bash
+curl "http://localhost:3000/api/antartida/datos/fechaini/2026-01-01T00:00:00/fechafin/2026-01-02T00:00:00/estacion/gabriel-de-castilla?location=Pacific/Auckland&aggregation=daily" | jq
+```
+
+## Part 2 - Traders discover the service
+
+This part follows the same basic usage as part 1, with a few changes. Since this part does not specify a required endpoint path, I introduced a canonical route that makes it easier to identify stations by their IDs.
+
+Juan Carlos I weather station, ID 89064:
+
+```bash
+curl "http://localhost:3000/api/datos/fechaini/2026-01-01T00:00:00/fechafin/2026-01-02T00:00:00/estacion/89064"
+```
+
+Gabriel de Castilla weather station, ID 89070:
+
+```bash
+curl "http://localhost:3000/api/datos/fechaini/2026-01-01T00:00:00/fechafin/2026-01-02T00:00:00/estacion/89070"
+```
+
+Clients only need to use the canonical `/api/datos/…` route. The original `/api/antartida/…` route remains available for backward compatibility because part 1 of the challenge explicitly requires it, and the existing tests verify that it continues to work.
+
+The query parameters remain the same as in Part 1: datetime start, date time end, location, time aggregation, and types.
+
+For example:
+
+```bash
+curl "http://localhost:3000/api/datos/fechaini/2026-01-01T00:00:00/fechafin/2026-02-01T00:00:00/estacion/89064?location=Europe/Madrid&aggregation=daily&types=temperature,speed"
+```
+
+### SQLite-backed data access
+
+The API serves data from SQLite. If the requested time range is not cached, it fetches the missing data from AEMET, stores it, and then serves the response from the database.
+
+The weather-data cache starts empty and grows as requests arrive.
+
+I used `better-sqlite3` to interact with the SQLite database from Node.js.
+
+### Station registry
+
+The application synchronises the full station registry from AEMET's maestro endpoint into a SQLite table at startup and refreshes it periodically. Station identifiers are validated against this local registry.
+
+The two Antarctic stations are included as fallback seed data, allowing the application to serve those stations even if the registry endpoint is unavailable at startup.
+
+Keeping the registry locally also means that station lookups do not require a network request once the registry has been populated.
+
+### Why I did not use an ORM
+
+I decided not to use an ORM. With only two tables and a small set of prepared statements, I felt that adding one would introduce unnecessary complexity for a challenge that values clarity.
+
+### Concurrency and upstream requests
+
+I added a fetch queue with an environment-configurable concurrency limit and exponential backoff. This logic lives in the AEMET client layer so that all callers benefit from it.
+
+The challenge requires the application to handle thousands of requests, so avoiding duplicate upstream calls was another important consideration.
+
+If 50 clients request the same stale station data at the same time, the application should not send 50 identical requests to AEMET. Instead, the first request starts the fetch, while the others await the same promise and then read the updated data from SQLite.
+
+### Availability and stale data
+
+The challenge prioritises availability during business hours and states that AEMET updates its data a few times a day. I therefore treated access to cached data as more important than requiring a successful refresh for every request.
+
+When cached data is stale and a refresh fails, the API still returns the stored data, with explicit metadata indicating its status. It returns an error only when no stored data is available to satisfy the request.
+
+### Data granularity
+
+Based on my investigation of the available AEMET endpoints, I could not retrieve historical observations at 10-minute intervals for non-Antarctic stations.
+
+I therefore kept the Antarctic data product for the two Antarctic stations, providing 10-minute observations across the requested range, as in Part 1.
+
+For other stations, I used a two-tier approach:
+
+- **Recent data**: observations at 10-minute intervals, where available.
+- **Older data**: daily climatological records.
+
+The response identifies each row's granularity so that clients can distinguish between observation data and daily records.
+
+### Logging
+
+To address the requirement for logging that supports troubleshooting, I chose Pino, a logging library for Node.js. Rather than writing unstructured text messages, the application produces JSON logs containing a severity level and relevant contextual fields. This structure makes it easier to filter, search, and correlate events during troubleshooting.
+
+I also wanted to keep logging overhead low while maintaining useful diagnostic information.
+
+## Part 3 - A frontend for convenience
+
+The dataset can contain thousands of rows, so I added client-side pagination and sortable columns to make it easier to explore. The charting library I used was Recharts.
+
+The table shows each row's tier (10 min vs. daily) and a status chip explains mixed-granularity responses, because a daily mean and a 10-minute reading are different kinds of facts. The API never disguises one as the other.
+
+For the interface and terminal colour palette, I used colours sampled from the company logo:
+
+- Dark petrol blue (`#056080`) as the primary colour.
+- Cyan (`#31ADC5`) as the secondary colour.
+- Muted green (`#5D8A40`) for accents.
+
+### How to use
+
+1. Open a terminal in the `src` directory.
+2. Start the application:
 
    ```bash
-   npm run build:all  # compiles the backend and bundles the SPA
-   npm start          # http://localhost:3000 — API + front-end together
+   npm run dev:all
    ```
 
-4. Run the tests (they never touch the real AEMET API):
+3. Open the link shown in the terminal.
 
-   ```bash
-   npm test           # backend suite
-   npm --prefix frontend test   # front-end suite
-   npm run test:all   # both
-   ```
+In this version, you can enter the required values and adjust the parameters more easily through the user interface.
 
-The SQLite cache lives at `DB_PATH` (default `./data/windfarm.sqlite`,
-git-ignored) and is created on first boot; the station catalog syncs from
-AEMET at startup and then daily.
+The application notifies you if an error occurs or if the source API fails and cached data is used to answer your request.
 
-## API reference
-
-### Canonical route (Part 2): all stations
+## Project structure
 
 ```
-GET /api/datos/fechaini/{fechaIniStr}/fechafin/{fechaFinStr}/estacion/{identificacion}
+src/
+  config/     → env loading and validation, pino logger
+  domain/     → stations, data types, time windows, coordinates, errors
+  client/     → AEMET clients: antartida, climatology, obs, inventory,
+              → concurrency limiter
+  storage/    → SQLite: migrations, readings repo, station catalog repo
+  services/   → time parsing/DST, aggregation, read-through product cache,
+              → station catalog sync, two-tier composite dataset service
+  routes/     → antartida route (Part 1), datos route (Part 2), health,
+              → estaciones route (Part 3), shared request parsing
+  middleware/ → request logging, central error handler
+  app.ts      → Express application factory (everything injected)
+  server.ts   → bootstrap: wiring, catalog sync, graceful shutdown
+
+tests/
+  timeService, aggregationService, api (part 1 unchanged)
+  climatologyClient, obsClient, inventoryClient (live fixtures)
+  coordinates, concurrencyLimiter
+  readingsRepository, stationCatalog (throwaway SQLite per test)
+  productCache (freshness, TTL, single-flight, serve-stale)
+  stationDataService (two-tier merge, boundary semantics)
+  datosApi (full HTTP stack, cache metadata contract, /health)
+  estacionesApi (part 3 picker endpoint: search, limit, validation)
+
+frontend/     → Part 3 SPA (React 19 + Vite + TypeScript)
+  src/api/        → typed contract mirror + fetch client + query builder
+  src/components/ → station picker, cache status, charts, table (+ helpers)
+  src/hooks/      → useDataset (abortable), useStations (debounced search)
+  src/lib/        → dates (default range, wall-time formatting), display labels
+  src/App.tsx     → form state → query → results pipeline
+  src/*.test.*    → unit tests per module + App smoke test
 ```
 
-`{identificacion}` is an AEMET station id (the catalog "indicativo", e.g.
-`8178D`). Any station of the [official inventory](https://opendata.aemet.es/centrodedescargas/inicio)
-can be requested, plus the two seeded Antarctic stations `89064` /
-`89070`. Unknown stations get a `400 bad_request`.
+## Errors
 
-Query parameters are the same as Part 1 (`location`, `aggregation`,
-`types`), with identical semantics.
-
-**Response** — Part 1's contract plus cache metadata and per-row granularity:
-
-```json
-{
-  "station": "ALBACETE",
-  "stationId": "8178D",
-  "start": "2026-11-01T01:00:00+01:00",
-  "end": "2026-11-15T13:00:00+01:00",
-  "timezone": "Europe/Madrid",
-  "aggregation": "none",
-  "types": ["temperature", "pressure", "speed"],
-  "count": 2,
-  "data": [
-    {
-      "datetime": "2026-11-02T00:00:00+01:00",
-      "granularity": "daily",
-      "samples": null,
-      "temperature": 13.2,
-      "pressure": 941.35,
-      "speed": 0.8
-    },
-    {
-      "datetime": "2026-11-15T11:00:00+01:00",
-      "granularity": "observation",
-      "samples": 1,
-      "temperature": 10.0,
-      "pressure": 943.1,
-      "speed": 0.8
-    }
-  ],
-  "stale": false,
-  "partial": false,
-  "lastSyncedAt": "2026-11-15T13:00:00+01:00"
-}
-```
-
-- `granularity` tells you which upstream tier a row came from. AEMET has
-  **no historical 10-minute product** for regular stations, so the service
-  is a two-tier composite:
-  - `"daily"` — daily climatology (`tmed` → temperature, mean of
-    `presMax`/`presMin` → pressure, `velmedia` → speed) for the historical
-    part of the range. `samples` is `null` because these are
-    source-provided daily summaries, not sample means.
-  - `"observation"` — conventional observations (native cadence, often
-    hourly, station-dependent) for roughly the last 24 hours.
-  - The two Antarctic stations keep their rich 10-minute `antartida`
-    product for **any** range (also labeled `"observation"`).
-- `stale: true` — data was served although refreshing from AEMET failed
-  (high availability: slightly old data beats an outage).
-- `partial: true` — only some of the requested products could be
-  refreshed.
-- `lastSyncedAt` — when the served data was last actually fetched from
-  AEMET.
-
-**Aggregation semantics with mixed tiers:** `hourly` buckets are only
-meaningful for the observation tier (a daily value cannot be subdivided —
-daily rows pass through labeled `"daily"`); `daily` groups observations into
-day buckets (drawn in the station's zone) while climatology rows pass
-through; `monthly` groups everything into month buckets. If both tiers
-produce the same daily bucket, the observation row wins (fresher, sample-based).
-
-### Legacy route (Part 1): Antarctic stations
-
-```
-GET /api/antartida/datos/fechaini/{fechaIniStr}/fechafin/{fechaFinStr}/estacion/{identificacion}
-```
-
-Kept byte-for-byte compatible with Part 1: `identificacion` is still
-`juan-carlos-i` or `gabriel-de-castilla`, and the response is the Part 1
-dataset (no cache metadata). New consumers should use `/api/datos`.
-
-### Health
-
-```
-GET /api/health   ->  200 {"status":"ok"}  |  503 {"status":"error"}
-```
-
-### Station catalog (Part 3, supports the front-end picker)
-
-```
-GET /api/estaciones?search=juan&limit=20
-```
-
-- `search` (optional) — case-insensitive substring over the station id,
-  name, or province.
-- `limit` (optional) — max results, 1–500, default 100 (keeps picker
-  responses bounded; a `limit` that is not a positive integer is a
-  `400 bad_request`).
-
-```json
-{
-  "count": 1,
-  "stations": [
-    { "id": "89064", "name": "JUAN CARLOS I", "province": null,
-      "latitude": -62.66, "longitude": -60.39 }
-  ]
-}
-```
-
-### Errors
-
-Every error is a JSON envelope: `{"error": {"code": "...", "message": "..."}}`.
+I used Zod, a validation library, to validate request parameters and identify invalid input.
 
 | HTTP | `code` | Meaning |
-|---|---|---|
+|------|---------|---------|
 | 400 | `bad_request` | Invalid path/query parameters, unknown station (with details) |
 | 404 | `not_found` | Unknown route |
 | 404 | `no_data` | AEMET has no data for that station/range |
@@ -227,136 +353,3 @@ Every error is a JSON envelope: `{"error": {"code": "...", "message": "..."}}`.
 | 502 | `aemet_invalid_api_key` | AEMET rejected the configured key (keys expire!) |
 | 502/503 | `aemet_*` | Other upstream failures |
 | 500 | `internal_error` | Unexpected server error (details logged, never leaked) |
-
-## Design decisions (Part 3 — front-end)
-
-- **React 19 + Vite + TypeScript SPA** (`frontend/`): one language across
-  the whole project, and the API contract is mirrored in typed interfaces
-  (`frontend/src/api/contract.ts`) so the compiler catches drift.
-- **Small multiples, never a dual axis:** the three measurements have
-  incompatible units (°C / hPa / m/s), so each gets its own synced chart
-  with its own unit — the #1 charting mistake (two y-scales on one plot)
-  is avoided by construction.
-- **Validated palette:** the series colors (temperature `#055C8A`,
-  pressure `#1AA9C9`, speed `#5D8A40`) are the brand colors snapped to the
-  nearest step that passes the dataviz six-checks validator (lightness
-  band, chroma floor, CVD separation ≥8 ΔE, normal-vision ≥15 ΔE,
-  contrast); the pressure cyan's contrast WARN is covered by direct chart
-  titles and the table view. Status is never color-alone — every cache
-  chip carries its label.
-- **DST-correct by construction:** the default range is computed per
-  endpoint in the offset in force on that date (`Intl`), and the table's
-  datetime sort compares **instants**, so the repeated wall-clock hour of
-  the DST fall-back orders correctly.
-- **No client state library:** a small `useDataset` hook with
-  `AbortController` (changing filters cancels the in-flight request) —
-  one kind of query doesn't justify TanStack Query.
-- **Honest granularity in the UI:** the table shows each row's tier
-  (10 min vs. daily) and a status chip explains mixed-granularity
-  responses, because a daily mean and a 10-minute reading are different
-  kinds of facts.
-- **Served by the API process in production:** `express.static` mounts
-  `frontend/dist` only when it exists, so a backend-only checkout still
-  boots cleanly.
-
-
-
-- **Read-through, not prefetch:** every range is served from SQLite; only
-  chunks that are missing or no longer fresh trigger an upstream fetch. A
-  background sync of all stations would itself be the "overloading the
-  source API" the challenge forbids.
-- **Freshness model:** AEMET products differ in when their data becomes
-  immutable — observations roll off after ~24 h, daily climatology
-  publishes with ~4 days of delay, the Antarctic product updates a few
-  times per day. Each product therefore has a *mutability horizon* and a
-  TTL. A chunk entirely older than the horizon is cached **forever**;
-  chunks inside it re-fetch only after the TTL (15 min obs, 6 h
-  climatology tail, 30 min antartida). Every successful fetch is recorded
-  in `range_sync`, so staleness is auditable.
-- **Stampede protection:** concurrent identical requests share one
-  in-flight fetch (single-flight per chunk), and the total number of
-  concurrent AEMET requests is capped (`AEMET_MAX_CONCURRENT`, default 3,
-  well under the documented ~50 req/min limit; note each logical query
-  costs two HTTP calls because of AEMET's envelope).
-- **Serve-stale over hard failure:** an upstream error never wipes cached
-  data; the response is served with `stale: true`. The cache exists
-  precisely to survive AEMET outages during trading hours.
-- **Two-tier honesty:** rows carry their `granularity` and `samples`
-  because a daily mean and a 10-minute reading are different kinds of
-  facts; the API never disguises one as the other.
-- **Per-station aggregation timezone:** day/month boundaries are drawn in
-  the station's own zone — the Canary Islands aggregate in
-  `Atlantic/Canary`, the rest in `Europe/Madrid`, the Antarctic stations
-  in UTC — while output datetimes are always Europe/Madrid with explicit
-  CET/CEST offsets (Part 1 requirement, DST transitions pinned by tests).
-- **Catalog:** synced from AEMET's station inventory at boot (daily
-  refresh), with the two Antarctic stations embedded as a seed — they are
-  **not** part of the upstream inventory (verified), and the seed also
-  keeps the service usable when the inventory endpoint is down.
-
-### Verified AEMET quirks (all pinned by live fixtures in tests)
-
-- Every AEMET OpenData endpoint returns an envelope whose `datos` field is
-  a URL to the actual data resource; the client follows it transparently.
-- "No data" arrives as HTTP 200 with `estado: 404` inside the envelope.
-- The antartida endpoint requires literal `UTC` date suffixes; missing
-  measurements are the string `"NaN"`.
-- Values may arrive as strings with decimal commas (`"14,2"`), numbers, or
-  be absent — all normalized, never treated as zero.
-- Conventional observations use `fint` timestamps with `+0000` offsets
-  (no `Z`), and their cadence is station-dependent (hourly for 8178D).
-- The station inventory is served as **latin-1**, decoded strictly
-  (UTF-8 first, windows-1252 fallback) so names like "TÍAS" survive.
-- Daily climatology queries are practically capped at ~10 days per
-  request; longer ranges are split into consecutive windows and merged.
-- Coordinates arrive as `ddmmss` + hemisphere strings (`"134125W"`).
-
-## Project structure
-
-```
-src/
-  config/          # env loading & validation, pino logger
-  domain/          # stations, data types, time windows, coordinates, errors
-  client/          # AEMET clients: antartida, climatology, obs, inventory,
-                   #   + concurrency limiter (all quirks verified live)
-  storage/         # SQLite: migrations, readings repo, station catalog repo
-  services/        # time parsing/DST, aggregation, read-through product cache,
-                   #   station catalog sync, two-tier composite dataset service
-  routes/          # antartida route (Part 1), datos route (Part 2), health,
-                   #   estaciones route (Part 3), shared request parsing
-  middleware/      # request logging, central error handler
-  app.ts           # Express application factory (everything injected)
-  server.ts        # bootstrap: wiring, catalog sync, graceful shutdown
-tests/
-  timeService, aggregationService, api (Part 1 — unchanged, still green)
-  climatologyClient, obsClient, inventoryClient (live fixtures)
-  coordinates, concurrencyLimiter
-  readingsRepository, stationCatalog (throwaway SQLite per test)
-  productCache (freshness, TTL, single-flight, serve-stale)
-  stationDataService (two-tier merge, boundary semantics)
-  datosApi (full HTTP stack, cache metadata contract, /health)
-  estacionesApi (Part 3 picker endpoint: search, limit, validation)
-
-frontend/               # Part 3 SPA (React 19 + Vite + TypeScript)
-  src/api/        # typed contract mirror + fetch client + query builder
-  src/components/ # station picker, cache status, charts, table (+ helpers)
-  src/hooks/      # useDataset (abortable), useStations (debounced search)
-  src/lib/        # dates (default range, wall-time formatting), display labels
-  src/App.tsx     # form state → query → results pipeline
-  src/*.test.*    # unit tests per module + App smoke test
-```
-
-## Limitations / TODOs
-
-- [ ] Single-process deployment (SQLite + in-process single-flight). The
-      README of the challenge assumes internal usage; horizontal scaling
-      would need a shared cache and cross-instance dedup.
-- [ ] Catalog refresh is a plain interval; a pub/sub or admin endpoint
-      could force-refresh on demand.
-- [ ] No request rate limiting of our own API (consumers are internal).
-- [ ] Front-end: dark mode (tokens are structured for it, but the steps
-      must be re-validated against a dark surface, not auto-flipped).
-- [ ] Front-end: the Recharts bundle is ~500 kB minified; code-splitting
-      it (dynamic import) would improve first load.
-- [ ] Front-end: a station map picker (lat/lon is already in the catalog
-      endpoint response) would be a nice upgrade over the search box.
